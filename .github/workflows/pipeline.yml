@@ -1,0 +1,78 @@
+name: Wellness Package MLOps Pipeline
+
+on:
+  push:
+    branches: [main]        # auto-run on every push to main
+  workflow_dispatch: {}     # also allow manually triggering a run from the Actions tab
+
+jobs:
+
+  # Job 1: validate the raw dataset's schema before anything else runs.
+  register-data:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4                 # pull the repo code onto the runner
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: python src/validate_data.py           # fails the job if the schema check fails
+
+  # Job 2: clean the data and create the train/test split.
+  prepare-data:
+    needs: register-data                           # only runs if register-data succeeded
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: python src/data_prep.py
+      - uses: actions/upload-artifact@v4            # save the split so the next job can reuse it
+        with:
+          name: processed-data
+          path: data/processed/
+
+  # Job 3: tune, train, evaluate, and save the best model.
+  train-model:
+    needs: prepare-data
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - uses: actions/download-artifact@v4           # pull down the train/test split from job 2
+        with:
+          name: processed-data
+          path: data/processed/
+      - run: python src/train.py
+      - uses: actions/upload-artifact@v4              # save the trained model for job 4
+        with:
+          name: trained-model
+          path: models/
+
+  # Job 4: commit the freshly trained model back to the repo. Pushing to
+  # main updates models/best_model.joblib, which Streamlit Community
+  # Cloud automatically picks up and redeploys.
+  commit-and-deploy:
+    needs: train-model
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write                                 # needed to push a commit from the runner
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0                               # full history, needed for a clean push
+      - uses: actions/download-artifact@v4
+        with:
+          name: trained-model
+          path: models/
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add models/best_model.joblib models/experiment_log.json
+          git diff --cached --quiet && echo "No model changes" || git commit -m "chore: update trained model [skip ci]"
+          git push origin HEAD:main
