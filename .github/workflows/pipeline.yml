@@ -3,14 +3,19 @@ name: Tourism Project Pipeline
 on:
   push:
     branches:
-      - main  # Automatically triggers on push to the main branch
-  workflow_dispatch:  # lets you click "Run workflow" in the Actions tab
+      - main               # Automatically triggers on every push to main
+  workflow_dispatch:        # Also lets you click "Run workflow" in the Actions tab
 
+# The final job commits the trained model back to the repo, so the
+# workflow needs write access to repository contents.
 permissions:
   contents: write
 
 jobs:
 
+  # ---------------------------------------------------------------------
+  # Job 1: Validate the raw dataset that lives in tourism_project/data/
+  # ---------------------------------------------------------------------
   register-dataset:
     runs-on: ubuntu-latest
     steps:
@@ -18,16 +23,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install Dependencies
+      - name: Install dependencies
         run: pip install -r tourism_project/requirements.txt
-      - name: Register Dataset
+      - name: Register dataset
         run: python tourism_project/model_building/data_register.py
-      - name: Upload Registered Dataset
+      - name: Upload registered dataset
         uses: actions/upload-artifact@v4
         with:
           name: registered-data
           path: tourism_project/data/tourism.csv
 
+  # ---------------------------------------------------------------------
+  # Job 2: Clean the data and create train/test splits
+  # ---------------------------------------------------------------------
   data-prep:
     needs: register-dataset
     runs-on: ubuntu-latest
@@ -36,11 +44,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install Dependencies
+      - name: Install dependencies
         run: pip install -r tourism_project/requirements.txt
-      - name: Run Data Preparation
+      - name: Run data preparation
         run: python tourism_project/model_building/prep.py
-      - name: Upload Train Test Splits
+      - name: Upload train/test splits
         uses: actions/upload-artifact@v4
         with:
           name: data-splits
@@ -50,7 +58,10 @@ jobs:
             ytrain.csv
             ytest.csv
 
-  model-traning:
+  # ---------------------------------------------------------------------
+  # Job 3: Tune, train, evaluate, track with MLflow, and commit the model
+  # ---------------------------------------------------------------------
+  model-training:
     needs: data-prep
     runs-on: ubuntu-latest
     steps:
@@ -58,22 +69,23 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install Dependencies
+      - name: Install dependencies
         run: pip install -r tourism_project/requirements.txt
-      - name: Download Train Test Splits
+      - name: Download train/test splits
         uses: actions/download-artifact@v4
         with:
           name: data-splits
-      - name: Start MLflow Server
-        run: |
-          nohup mlflow ui --host 0.0.0.0 --port 5000 &  # Run MLflow UI in the background
-          sleep 5  # Wait for a moment to let the server starts
-      - name: Model Building
+      - name: Train, tune, and evaluate the model
         run: python tourism_project/model_building/train.py
-      - name: Commit Trained Model
+      - name: Upload MLflow experiment logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlflow-tracking
+          path: mlruns
+      - name: Commit trained model back to the repository
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add tourism_project/deployment/best_model.joblib
-          git commit -m "Add trained model [skip ci]" || echo "No changes to commit"
+          git commit -m "Update trained model [skip ci]" || echo "No changes to commit"
           git push
