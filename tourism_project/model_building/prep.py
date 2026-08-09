@@ -72,9 +72,6 @@ def main() -> None:
         X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE, stratify=y
     )
 
-    print("Training shape:", train.shape)
-    print("Training shape:", test.shape)
-
     # Saved at the repo root - this matches the artifact paths declared in
     # .github/workflows/pipeline.yml for the "data-splits" artifact.
     Xtrain.to_csv("Xtrain.csv", index=False)
