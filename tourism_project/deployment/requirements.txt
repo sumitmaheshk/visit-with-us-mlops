@@ -1,5 +1,9 @@
+# Dependencies for the Streamlit Community Cloud app.
+# Versions are pinned to match tourism_project/requirements.txt exactly, so
+# the pipeline that TRAINS the model and the app that LOADS it use the same
+# library versions -- this avoids joblib/pickle version-mismatch errors.
 streamlit
-pandas
-scikit-learn
-xgboost
-joblib
+pandas==2.2.2
+scikit-learn==1.5.1
+xgboost==2.1.1
+joblib==1.4.2
